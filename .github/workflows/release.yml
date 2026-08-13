@@ -1,0 +1,50 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: windows-latest
+            args: ""
+            rust-targets: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - run: bun install
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Claude Usage ${{ github.ref_name }}"
+          releaseBody: "Portable meters for Claude session / weekly / Fable limits. Windows: grab the bare .exe (portable) or the setup bundle. Mac: the .dmg is universal (Intel + Apple Silicon); unsigned, so first open is right-click → Open."
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      # tauri-action attaches installer bundles only; the bare exe IS the
+      # portable artifact on Windows, so attach it too.
+      - if: matrix.platform == 'windows-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.ref_name }} "src-tauri/target/release/claude-usage-tracker.exe" --clobber

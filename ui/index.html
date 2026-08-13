@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Claude Usage</title>
+<style>
+  :root {
+    --bg: #16161d;
+    --panel: #1e1e28;
+    --text: #e8e6e3;
+    --dim: #8a8894;
+    --green: #4cae64;
+    --amber: #d9a03f;
+    --red: #d95c4a;
+    --track: #2c2c38;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+    padding: 16px 18px;
+    user-select: none;
+  }
+  #banner {
+    display: none;
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 10;
+    background: #3a2a28;
+    border: 1px solid var(--red);
+    border-radius: 6px;
+    color: #f0c9c2;
+    font-size: 12.5px;
+    padding: 6px 10px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.5);
+  }
+  #banner.show { display: block; }
+  .meter { margin-bottom: 14px; }
+  .meter .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .meter .label { font-weight: 600; }
+  .meter .pct { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .meter .track {
+    background: var(--track);
+    border-radius: 5px;
+    height: 10px;
+    margin: 5px 0 3px;
+    overflow: hidden;
+  }
+  .meter .fill {
+    background: var(--green);
+    border-radius: 5px;
+    height: 100%;
+    width: 0;
+    transition: width 300ms ease;
+  }
+  .meter.warn .fill { background: var(--amber); }
+  .meter.crit .fill { background: var(--red); }
+  .meter .resets { color: var(--dim); font-size: 12px; }
+  #footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--track);
+    margin-top: 4px;
+    padding-top: 12px;
+  }
+  #credits { color: var(--dim); font-size: 12px; }
+  #right { display: flex; align-items: center; gap: 10px; }
+  #ago { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  #ago.stale { color: var(--amber); }
+  button {
+    background: var(--panel);
+    border: 1px solid var(--track);
+    border-radius: 6px;
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    padding: 5px 12px;
+  }
+  button:hover { border-color: var(--dim); }
+  button:disabled { color: var(--dim); cursor: default; }
+  #pin { padding: 5px 9px; }
+  #pin.on {
+    background: var(--track);
+    border-color: var(--amber);
+  }
+</style>
+</head>
+<body>
+  <div id="banner"></div>
+  <div id="meters"></div>
+  <div id="footer">
+    <span id="credits"></span>
+    <span id="right">
+      <span id="ago">not fetched yet</span>
+      <button id="pin" title="Pin on top">&#x1f4cc;</button>
+      <button id="refresh">&#x21bb; Refresh</button>
+    </span>
+  </div>
+
+<script>
+  const invoke = window.__TAURI__.core.invoke;
+  const $ = (id) => document.getElementById(id);
+
+  const KIND_ORDER = { session: 0, weekly_all: 1, weekly_scoped: 2 };
+  const ERRORS = {
+    "no-creds": "Claude Code isn't signed in on this machine — no credentials found.",
+    "auth": "Token stale — open Claude Code once, then refresh.",
+    "offline": "Offline — couldn't reach api.anthropic.com.",
+    "bad-json": "The endpoint answered strangely — showing last good numbers.",
+    "internal": "Internal error — try refreshing.",
+  };
+
+  let lastFetch = null;
+
+  function label(l) {
+    if (l.kind === "session") return "Session (5h)";
+    if (l.kind === "weekly_all") return "Week — all models";
+    if (l.kind === "weekly_scoped")
+      return "Week — " + (l.scope?.model?.display_name ?? "scoped");
+    return l.kind;
+  }
+
+  function resetsIn(iso) {
+    if (!iso) return "";
+    const ms = new Date(iso) - Date.now();
+    if (ms <= 0) return "resets any moment";
+    const m = Math.floor(ms / 60000);
+    const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+    return "resets in " + (d ? `${d}d ${h}h` : h ? `${h}h ${mm}m` : `${mm}m`);
+  }
+
+  function tier(l) {
+    const p = l.percent ?? 0;
+    if (["critical", "exceeded"].includes(l.severity) || p >= 90) return "crit";
+    if (["warning", "elevated"].includes(l.severity) || p >= 70) return "warn";
+    return "";
+  }
+
+  function render(data) {
+    const limits = (data.limits ?? []).slice().sort(
+      (a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9)
+    );
+    $("meters").innerHTML = limits.map((l) => `
+      <div class="meter ${tier(l)}">
+        <div class="row"><span class="label">${label(l)}</span>
+          <span class="pct">${Math.round(l.percent ?? 0)}%</span></div>
+        <div class="track"><div class="fill" style="width:${Math.min(l.percent ?? 0, 100)}%"></div></div>
+        <div class="resets">${resetsIn(l.resets_at)}</div>
+      </div>`).join("");
+
+    const x = data.extra_usage;
+    if (x?.credits_ever_enabled && x.used_credits != null) {
+      const dollars = x.used_credits / 10 ** (x.decimal_places ?? 2);
+      $("credits").textContent =
+        `extra usage: $${dollars.toFixed(x.decimal_places ?? 2)}`;
+    } else {
+      $("credits").textContent = "";
+    }
+  }
+
+  function tickAgo() {
+    const el = $("ago");
+    if (lastFetch == null) return;
+    const m = Math.floor((Date.now() - lastFetch) / 60000);
+    el.textContent = m < 1 ? "updated just now" : `updated ${m}m ago`;
+    el.classList.toggle("stale", m >= 15);
+  }
+
+  async function refresh() {
+    const btn = $("refresh");
+    btn.disabled = true;
+    btn.textContent = "fetching…";
+    try {
+      const data = await invoke("fetch_usage");
+      render(data);
+      lastFetch = Date.now();
+      $("banner").className = "";
+    } catch (e) {
+      $("banner").textContent = ERRORS[e] ?? `Error: ${e}`;
+      $("banner").className = "show";
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = "&#x21bb; Refresh";
+      tickAgo();
+    }
+  }
+
+  let pinned = false;
+  async function setPin(on) {
+    try {
+      await invoke("set_pin", { pinned: on });
+      pinned = on;
+      localStorage.setItem("pin", on ? "1" : "0");
+      $("pin").classList.toggle("on", on);
+      $("pin").title = on ? "Unpin" : "Pin on top";
+    } catch { /* window call failed; leave state as-is */ }
+  }
+
+  $("pin").addEventListener("click", () => setPin(!pinned));
+  $("refresh").addEventListener("click", refresh);
+  setInterval(tickAgo, 15000);
+  if (localStorage.getItem("pin") === "1") setPin(true); // survive relaunch
+  refresh(); // on-launch fetch — after this, only the button fetches
+</script>
+</body>
+</html>
