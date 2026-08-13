@@ -9,7 +9,7 @@ always-on-top, refresh on launch + button with an honest
 Reads the OAuth token from `~/.claude/.credentials.json` (fresh on every
 refresh, never stored, never shown) and asks the same endpoint Claude
 Code's own `/usage` screen uses. Every failure is an explicit state —
-the app shows errors, never wrong numbers.
+the app shows errors, never an assumed metric.
 
 
 <img width="439" height="330" alt="image" src="https://github.com/user-attachments/assets/b19025ad-cf55-4502-a8f5-0fc3618a199b" />
