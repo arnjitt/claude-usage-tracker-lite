@@ -43,6 +43,21 @@ git tag v0.1.x && git push --tags
 
 The Mac .dmg is unsigned: first open is right-click → Open.
 
+## Versions
+
+- **v0.1.2** (2026-08-15) — weekly meters now sit on top (they're the
+  numbers that govern a week), and the progress fills actually draw:
+  the CSP had been silently blocking their inline widths since day
+  one. Dropped the MSI (setup.exe + portable exe cover Windows), added
+  the MIT license, and bundle filenames finally match the tag.
+- **v0.1.1** (2026-08-13) — first release that shipped: the three
+  meters, pin, credits line, and CI-built artifacts — portable exe +
+  installers on Windows, universal .dmg on macOS. Bundles were named
+  0.1.0; the app version hadn't been bumped with the tag.
+- **v0.1.0** (2026-08-12) — initial tag. The release job couldn't
+  upload artifacts (missing write permission), so it never got a
+  release page. Superseded by v0.1.1.
+
 ## License
 
 [MIT](LICENSE).
