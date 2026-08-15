@@ -43,7 +43,7 @@ git tag v0.1.x && git push --tags
 
 The Mac .dmg is unsigned: first open is right-click → Open.
 
-## Versions
+## Changelog
 
 - **v0.1.2** (2026-08-15) — weekly meters now sit on top (they're the
   numbers that govern a week), and the progress fills actually draw:
