@@ -21,7 +21,8 @@ Code's own `/usage` screen uses. Every failure is an explicit state —
 the app shows errors, never an assumed metric.
 
 
-<img width="439" height="330" alt="image" src="https://github.com/user-attachments/assets/b19025ad-cf55-4502-a8f5-0fc3618a199b" />
+<img width="442" height="331" alt="image" src="https://github.com/user-attachments/assets/a4cbada3-c9e3-44fd-b9aa-efe3fb5c1cf8" />
+
 
 ## Requirements
 
