@@ -1,7 +1,7 @@
 {
   "name": "claude-usage-tracker",
-  "version": "0.1.0",
-  "description": "Portable meters for Claude session / weekly / Fable limits",
+  "version": "0.1.2",
+  "description": "Portable meters for Claude session / weekly / per-model limits",
   "private": true,
   "scripts": {
     "dev": "tauri dev",

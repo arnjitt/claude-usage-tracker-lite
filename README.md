@@ -1,7 +1,8 @@
 # claude-usage-tracker
 
 Portable meters for the Claude limits that actually gate a working day:
-**session (5h)** · **week — all models** · **week — Fable**, plus the
+**week — all models** · **week — model-scoped** (labelled with whatever
+model the API reports) · **session (5h)**, plus the
 extra-usage credits line. Fixed dark, one small window, a 📌 pin for
 always-on-top, refresh on launch + button with an honest
 "updated N min ago" ticker.
@@ -33,7 +34,7 @@ Toolchain: Bun + Rust (rustup) + the platform's C toolchain
 
 ## Distribution
 
-Tag a version and CI does the rest — Windows portable exe + installers
+Tag a version and CI does the rest — Windows portable exe + installer
 and a universal macOS .dmg land on the GitHub release:
 
 ```sh
@@ -41,4 +42,7 @@ git tag v0.1.x && git push --tags
 ```
 
 The Mac .dmg is unsigned: first open is right-click → Open.
-![Uploading image.png…]()
+
+## License
+
+[MIT](LICENSE).
