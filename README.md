@@ -1,11 +1,19 @@
 # claude-usage-tracker
 
-Portable meters for the Claude limits that actually gate a working day:
-**week — all models** · **week — model-scoped** (labelled with whatever
-model the API reports) · **session (5h)**, plus the
-extra-usage credits line. Fixed dark, one small window, a 📌 pin for
-always-on-top, refresh on launch + button with an honest
-"updated N min ago" ticker.
+### _Portable meters for the Claude limits:_
+  **Week — all models** - Overall % of Weekly limit across all models
+  
+  **Week — model-scoped** - Labelled % with Fable weekly limit currently
+  
+  **Session (5h)** - 5 hour session window
+
+### _Features_
+
+- Extra-usage credits line
+- Fixed dark
+- One small window
+- 📌 pin for always-on-top
+- Refresh on launch + button with an honest "updated N min ago" ticker.
 
 Reads the OAuth token from `~/.claude/.credentials.json` (fresh on every
 refresh, never stored, never shown) and asks the same endpoint Claude
