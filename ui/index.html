@@ -37,7 +37,8 @@
     padding: 6px 10px;
     box-shadow: 0 2px 12px rgba(0,0,0,.5);
   }
-  #banner.show { display: block; }
+  #banner.show { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #bx { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0 2px; }
   .meter { margin-bottom: 14px; }
   .meter .row {
     display: flex;
@@ -73,7 +74,7 @@
   }
   #credits { color: var(--dim); font-size: 12px; }
   #right { display: flex; align-items: center; gap: 10px; }
-  #ago { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  #ago, #next { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
   #ago.stale { color: var(--amber); }
   button {
     background: var(--panel);
@@ -95,12 +96,14 @@
 </style>
 </head>
 <body>
-  <div id="banner"></div>
+  <div id="banner"><span id="bmsg"></span>
+    <button id="bx" title="Dismiss">&times;</button></div>
   <div id="meters"></div>
   <div id="footer">
     <span id="credits"></span>
     <span id="right">
       <span id="ago">not fetched yet</span>
+      <span id="next"></span>
       <button id="pin" title="Pin on top">&#x1f4cc;</button>
       <button id="refresh">&#x21bb; Refresh</button>
     </span>
@@ -117,9 +120,24 @@
     "offline": "Offline — couldn't reach api.anthropic.com.",
     "bad-json": "The endpoint answered strangely — showing last good numbers.",
     "internal": "Internal error — try refreshing.",
+    "http-429": "Rate limited — retrying automatically when the countdown ends.",
   };
 
+  function errorText(e) {
+    if (ERRORS[e]) return ERRORS[e];
+    if (/^http-\d+$/.test(e)) {
+      const code = e.slice(5);
+      return code[0] === "5"
+        ? `Anthropic's API is having trouble (HTTP ${code}) — try again shortly.`
+        : `Unexpected answer (HTTP ${code}) — retry; if it persists, open Claude Code once.`;
+    }
+    return `Error: ${e}`;
+  }
+
+  const AUTO_MS = 180000; // auto-retry delay after a rate limit
   let lastFetch = null;
+  let nextAt = null;
+  let fetching = false;
 
   function label(l) {
     if (l.kind === "session") return "Session (5h)";
@@ -172,30 +190,43 @@
     }
   }
 
-  function tickAgo() {
+  function tick() {
     const el = $("ago");
-    if (lastFetch == null) return;
-    const m = Math.floor((Date.now() - lastFetch) / 60000);
-    el.textContent = m < 1 ? "updated just now" : `updated ${m}m ago`;
-    el.classList.toggle("stale", m >= 15);
+    if (lastFetch != null) {
+      const m = Math.floor((Date.now() - lastFetch) / 60000);
+      el.textContent = m < 1 ? "updated just now" : `updated ${m}m ago`;
+      el.classList.toggle("stale", m >= 15);
+    }
+    if (nextAt == null || fetching) return;
+    const s = Math.ceil((nextAt - Date.now()) / 1000);
+    if (s <= 0) { refresh(); return; }
+    $("next").textContent = `↻ ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   }
 
   async function refresh() {
+    if (fetching) return;
+    fetching = true;
     const btn = $("refresh");
     btn.disabled = true;
     btn.textContent = "fetching…";
+    let err = null;
     try {
       const data = await invoke("fetch_usage");
       render(data);
       lastFetch = Date.now();
       $("banner").className = "";
     } catch (e) {
-      $("banner").textContent = ERRORS[e] ?? `Error: ${e}`;
+      err = String(e);
+      $("bmsg").textContent = errorText(err);
       $("banner").className = "show";
     } finally {
+      fetching = false;
       btn.disabled = false;
       btn.innerHTML = "&#x21bb; Refresh";
-      tickAgo();
+      // only a rate limit arms the auto-retry; everything else stays manual
+      nextAt = err === "http-429" ? Date.now() + AUTO_MS : null;
+      if (nextAt == null) $("next").textContent = "";
+      tick();
     }
   }
 
@@ -211,10 +242,11 @@
   }
 
   $("pin").addEventListener("click", () => setPin(!pinned));
+  $("bx").addEventListener("click", () => $("banner").className = "");
   $("refresh").addEventListener("click", refresh);
-  setInterval(tickAgo, 15000);
+  setInterval(tick, 1000);
   if (localStorage.getItem("pin") === "1") setPin(true); // survive relaunch
-  refresh(); // on-launch fetch — after this, only the button fetches
+  refresh(); // on-launch fetch — after this the button (or a 429 countdown) fetches
 </script>
 </body>
 </html>
