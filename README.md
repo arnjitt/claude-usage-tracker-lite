@@ -14,6 +14,8 @@
 - One small window
 - 📌 pin for always-on-top
 - Refresh on launch + button with an honest "updated N min ago" ticker.
+- Dismissible error banners; a rate limit (429) arms a 3-minute
+  countdown, then retries automatically.
 
 Reads the OAuth token from `~/.claude/.credentials.json` (fresh on every
 refresh, never stored, never shown) and asks the same endpoint Claude
@@ -54,6 +56,11 @@ The Mac .dmg is unsigned: first open is right-click → Open.
 
 ## Changelog
 
+- **v0.1.3** (2026-08-17) — rate limits heal themselves: a 429 shows a
+  dismissible banner with a 3-minute countdown, then retries on its
+  own until the numbers are back. Other HTTP errors now read as
+  sentences instead of raw "http-NNN" codes, and every error banner
+  gets an × to close it.
 - **v0.1.2** (2026-08-15) — weekly meters now sit on top (they're the
   numbers that govern a week), and the progress fills actually draw:
   the CSP had been silently blocking their inline widths since day
