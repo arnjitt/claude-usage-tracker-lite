@@ -24,18 +24,13 @@
   }
   #banner {
     display: none;
-    position: fixed;
-    top: 8px;
-    left: 8px;
-    right: 8px;
-    z-index: 10;
     background: #3a2a28;
     border: 1px solid var(--red);
     border-radius: 6px;
     color: #f0c9c2;
     font-size: 12.5px;
+    margin-bottom: 12px;
     padding: 6px 10px;
-    box-shadow: 0 2px 12px rgba(0,0,0,.5);
   }
   #banner.show { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   #bx { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0 2px; }
@@ -66,15 +61,24 @@
   .meter .resets { color: var(--dim); font-size: 12px; }
   #footer {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
+    gap: 8px 10px;
     border-top: 1px solid var(--track);
-    margin-top: 4px;
     padding-top: 12px;
   }
-  #credits { color: var(--dim); font-size: 12px; }
-  #right { display: flex; align-items: center; gap: 10px; }
+  #credits { color: var(--dim); font-size: 12px; align-self: flex-start; padding-top: 7px; }
+  /* the timer sits under the Refresh button, in the button's own column */
+  #right {
+    display: grid;
+    grid-template-columns: auto auto auto;
+    align-items: center;
+    gap: 3px 10px;
+    margin-left: auto;
+  }
   #ago, #next { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  #next { grid-column: 3; grid-row: 2; text-align: center; white-space: nowrap; }
   #ago.stale { color: var(--amber); }
   button {
     background: var(--panel);
@@ -103,9 +107,9 @@
     <span id="credits"></span>
     <span id="right">
       <span id="ago">not fetched yet</span>
-      <span id="next"></span>
       <button id="pin" title="Pin on top">&#x1f4cc;</button>
       <button id="refresh">&#x21bb; Refresh</button>
+      <span id="next"></span>
     </span>
   </div>
 
@@ -117,7 +121,7 @@
   const ERRORS = {
     "no-creds": "Claude Code isn't signed in on this machine — no credentials found.",
     "auth": "Token stale — open Claude Code once, then refresh.",
-    "offline": "Offline — couldn't reach api.anthropic.com.",
+    "offline": "Offline — couldn't reach api.anthropic.com. Retrying shortly.",
     "bad-json": "The endpoint answered strangely — showing last good numbers.",
     "internal": "Internal error — try refreshing.",
     "http-429": "Rate limited — retrying automatically when the countdown ends.",
@@ -134,22 +138,47 @@
     return `Error: ${e}`;
   }
 
-  const AUTO_MS = 180000; // auto-retry delay after a rate limit
+  const HOURLY_MS = 3600000;     // background refresh — one request an hour
+  const RATE_LIMIT_MS = 180000;  // retry after a 429 that names no delay
+  const OFFLINE_MS = 300000;     // retry after a failed connection
   let lastFetch = null;
   let nextAt = null;
+  let countdown = false; // true while healing from an error: m:ss, not minutes
   let fetching = false;
+
+  // The shell reports a rate limit as "http-429" or "http-429:<Retry-After s>".
+  function splitError(e) {
+    const m = /^(http-429):(\d+)$/.exec(e);
+    return m ? { code: m[1], retryMs: Number(m[2]) * 1000 } : { code: e, retryMs: null };
+  }
+
+  function retryDelay({ code, retryMs }) {
+    if (code === "http-429")
+      return retryMs ? Math.min(Math.max(retryMs, 60000), HOURLY_MS) : RATE_LIMIT_MS;
+    if (code === "offline") return OFFLINE_MS;
+    return null; // nothing to heal on a timer — the hourly refresh covers it
+  }
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
 
   function label(l) {
     if (l.kind === "session") return "Session (5h)";
     if (l.kind === "weekly_all") return "Week — all models";
     if (l.kind === "weekly_scoped")
-      return "Week — " + (l.scope?.model?.display_name ?? "scoped");
-    return l.kind;
+      return "Week — " + (l.scope?.model?.display_name
+        ?? l.scope?.surface?.display_name ?? "scoped");
+    return String(l.kind);
   }
 
   function resetsIn(iso) {
     if (!iso) return "";
     const ms = new Date(iso) - Date.now();
+    if (Number.isNaN(ms)) return "";
     if (ms <= 0) return "resets any moment";
     const m = Math.floor(ms / 60000);
     const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
@@ -164,43 +193,80 @@
   }
 
   function render(data) {
-    const limits = (data.limits ?? []).slice().sort(
+    const limits = (Array.isArray(data.limits) ? data.limits : []).slice().sort(
       (a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9)
     );
-    $("meters").innerHTML = limits.map((l) => `
-      <div class="meter ${tier(l)}">
-        <div class="row"><span class="label">${label(l)}</span>
-          <span class="pct">${Math.round(l.percent ?? 0)}%</span></div>
-        <div class="track"><div class="fill"></div></div>
-        <div class="resets">${resetsIn(l.resets_at)}</div>
-      </div>`).join("");
-    // Tauri adds hash sources to style-src, which neutralizes 'unsafe-inline'
-    // and blocks style attributes — CSSOM writes are exempt, so widths go here.
-    $("meters").querySelectorAll(".fill").forEach((el, i) => {
-      el.style.width = Math.min(limits[i].percent ?? 0, 100) + "%";
-    });
+    // Built node by node: labels come from the server, so they go in as text.
+    // Widths are CSSOM writes — Tauri adds hash sources to style-src, which
+    // neutralizes 'unsafe-inline' and blocks style attributes.
+    $("meters").replaceChildren(...limits.map((l) => {
+      const meter = el("div", `meter ${tier(l)}`);
+      const row = el("div", "row");
+      row.append(el("span", "label", label(l)),
+        el("span", "pct", `${Math.round(l.percent ?? 0)}%`));
+      const track = el("div", "track");
+      const fill = el("div", "fill");
+      fill.style.width = Math.min(Math.max(l.percent ?? 0, 0), 100) + "%";
+      track.append(fill);
+      meter.append(row, track, el("div", "resets", resetsIn(l.resets_at)));
+      return meter;
+    }));
 
     const x = data.extra_usage;
-    if (x?.credits_ever_enabled && x.used_credits != null) {
-      const dollars = x.used_credits / 10 ** (x.decimal_places ?? 2);
-      $("credits").textContent =
-        `extra usage: $${dollars.toFixed(x.decimal_places ?? 2)}`;
+    if (x && (x.credits_ever_enabled || x.is_enabled) && typeof x.used_credits === "number") {
+      // used_credits is in minor units of the currency (cents for USD)
+      const dp = Number.isInteger(x.decimal_places) ? x.decimal_places : 2;
+      const amount = (x.used_credits / 10 ** dp).toFixed(dp);
+      const cur = typeof x.currency === "string" ? x.currency.toUpperCase() : "USD";
+      $("credits").textContent = cur === "USD"
+        ? `extra usage: $${amount}` : `extra usage: ${amount} ${cur}`;
     } else {
       $("credits").textContent = "";
     }
   }
 
+  // The window is fixed-size, so it follows the content: however many meters
+  // the server sends, nothing is clipped and nothing scrolls. The height the
+  // shell applies can include window chrome the page can't see (the macOS
+  // title bar), so the page compares what it asked for with the viewport it
+  // got and corrects for the difference.
+  let asked = null;
+  let chrome = Number(localStorage.getItem("chrome")) || 0;
+  function fit() {
+    const want = Math.ceil(document.documentElement.getBoundingClientRect().height);
+    if (want === window.innerHeight) return;
+    const ask = want + chrome;
+    if (ask === asked) return; // already requested — wait for the resize
+    asked = ask;
+    invoke("set_height", { height: ask }).catch(() => { asked = null; });
+  }
+  window.addEventListener("resize", () => {
+    const seen = asked == null ? NaN : asked - window.innerHeight;
+    if (seen >= 0 && seen <= 120 && seen !== chrome) {
+      chrome = seen;
+      localStorage.setItem("chrome", String(chrome));
+    }
+    fit();
+  });
+
   function tick() {
-    const el = $("ago");
+    const ago = $("ago");
     if (lastFetch != null) {
       const m = Math.floor((Date.now() - lastFetch) / 60000);
-      el.textContent = m < 1 ? "updated just now" : `updated ${m}m ago`;
-      el.classList.toggle("stale", m >= 15);
+      ago.textContent = m < 1 ? "updated just now"
+        : m < 60 ? `updated ${m}m ago`
+        : `updated ${Math.floor(m / 60)}h ${m % 60}m ago`;
+      ago.classList.toggle("stale", m >= 65); // an hourly refresh was missed
     }
     if (nextAt == null || fetching) return;
     const s = Math.ceil((nextAt - Date.now()) / 1000);
     if (s <= 0) { refresh(); return; }
-    $("next").textContent = `↻ ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    // healing from an error counts down to the second; the hourly refresh
+    // only needs minutes
+    $("next").textContent = countdown
+      ? `↻ ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+      : `updates in ${Math.ceil(s / 60)}m`;
+    fit();
   }
 
   async function refresh() {
@@ -216,16 +282,20 @@
       lastFetch = Date.now();
       $("banner").className = "";
     } catch (e) {
-      err = String(e);
-      $("bmsg").textContent = errorText(err);
+      err = splitError(String(e));
+      $("bmsg").textContent = errorText(err.code);
       $("banner").className = "show";
     } finally {
       fetching = false;
       btn.disabled = false;
       btn.innerHTML = "&#x21bb; Refresh";
-      // only a rate limit arms the auto-retry; everything else stays manual
-      nextAt = err === "http-429" ? Date.now() + AUTO_MS : null;
-      if (nextAt == null) $("next").textContent = "";
+      // a rate limit or a dropped connection retries soon, with a visible
+      // countdown; otherwise the next fetch is the quiet hourly one
+      const soon = err ? retryDelay(err) : null;
+      countdown = soon != null;
+      nextAt = Date.now() + (soon ?? HOURLY_MS);
+      btn.title = "Refreshes on its own every hour — next at " +
+        new Date(nextAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
       tick();
     }
   }
@@ -242,11 +312,11 @@
   }
 
   $("pin").addEventListener("click", () => setPin(!pinned));
-  $("bx").addEventListener("click", () => $("banner").className = "");
+  $("bx").addEventListener("click", () => { $("banner").className = ""; fit(); });
   $("refresh").addEventListener("click", refresh);
   setInterval(tick, 1000);
   if (localStorage.getItem("pin") === "1") setPin(true); // survive relaunch
-  refresh(); // on-launch fetch — after this the button (or a 429 countdown) fetches
+  refresh(); // on-launch fetch — then hourly, on the button, or on an error countdown
 </script>
 </body>
 </html>
