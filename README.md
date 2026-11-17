@@ -11,14 +11,16 @@
 
 - Extra-usage credits line
 - Fixed dark
-- One small window
+- One small window that sizes itself to the meters the server sends
 - 📌 pin for always-on-top
-- Refresh on launch + button with an honest "updated N min ago" ticker.
-- Dismissible error banners; a rate limit (429) arms a 3-minute
-  countdown, then retries automatically.
+- Refresh on launch, on the button, and quietly once an hour, with an
+  honest "updated N min ago" ticker and an "updates in N min" timer.
+- Dismissible error banners; a rate limit (429) or a dropped connection
+  arms a countdown, then retries automatically.
 
-Reads the OAuth token from `~/.claude/.credentials.json` (fresh on every
-refresh, never stored, never shown) and asks the same endpoint Claude
+Reads the OAuth token from Claude Code's own store — the login Keychain
+on macOS, `~/.claude/.credentials.json` elsewhere — fresh on every
+refresh, never stored, never shown, and asks the same endpoint Claude
 Code's own `/usage` screen uses. Every failure is an explicit state —
 the app shows errors, never an assumed metric.
 
@@ -29,7 +31,7 @@ the app shows errors, never an assumed metric.
 ## Requirements
 
 A machine where **Claude Code is signed in** (that's where the
-credentials file comes from). Windows 11 ships WebView2 already; macOS
+credentials come from). Windows 11 ships WebView2 already; macOS
 uses the system webview.
 
 ## Run / build
@@ -56,6 +58,13 @@ The Mac .dmg is unsigned: first open is right-click → Open.
 
 ## Changelog
 
+- **v0.1.4** (2026-11-17) — the numbers now refresh on their own once
+  an hour, with an "updates in N min" timer under the Refresh button;
+  the button still works any time. The Mac build finally finds the
+  token — Claude Code keeps it in the Keychain there, not in a file.
+  A 429 waits as long as the server asks, a dropped connection retries
+  after 5 minutes, the window resizes to fit its content, and
+  dependencies are refreshed (Tauri 2.12).
 - **v0.1.3** (2026-08-17) — rate limits heal themselves: a 429 shows a
   dismissible banner with a 3-minute countdown, then retries on its
   own until the numbers are back. Other HTTP errors now read as
